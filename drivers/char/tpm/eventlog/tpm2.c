@@ -202,9 +202,23 @@ static int tpm2_binary_bios_measurements_show(struct seq_file *m, void *v)
 	return 0;
 }
 
+static int tpm2_ascii_bios_measurements_show(struct seq_file *m, void *v)
+{
+	pr_err("%s\n", __func__);
+	seq_write(m, "data\n", 5);
+	return 0;
+}
+
 const struct seq_operations tpm2_binary_b_measurements_seqops = {
 	.start = tpm2_bios_measurements_start,
 	.next = tpm2_bios_measurements_next,
 	.stop = tpm2_bios_measurements_stop,
 	.show = tpm2_binary_bios_measurements_show,
+};
+
+const struct seq_operations tpm2_ascii_b_measurements_seqops = {
+	.start = tpm2_bios_measurements_start,
+	.next = tpm2_bios_measurements_next,
+	.stop = tpm2_bios_measurements_stop,
+	.show = tpm2_ascii_bios_measurements_show,
 };

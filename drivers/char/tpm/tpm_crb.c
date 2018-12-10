@@ -604,6 +604,7 @@ static int crb_acpi_add(struct acpi_device *device)
 	u32 sm;
 	int rc;
 
+  pr_err("%s\n", __func__);
 	status = acpi_get_table(ACPI_SIG_TPM2, 1,
 				(struct acpi_table_header **) &buf);
 	if (ACPI_FAILURE(status) || buf->header.length < sizeof(*buf)) {

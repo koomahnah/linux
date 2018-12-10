@@ -197,6 +197,7 @@ unsigned long efi_entry(void *handle, efi_system_table_t *sys_table,
 
 	/* Ask the firmware to clear memory on unclean shutdown */
 	efi_enable_reset_attack_mitigation(sys_table);
+  efi_retrieve_tpm2_eventlog(sys_table);
 
 	secure_boot = efi_get_secureboot(sys_table);
 

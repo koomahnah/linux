@@ -71,6 +71,8 @@ static void efi_retrieve_tpm2_eventlog_1_2(efi_system_table_t *sys_table_arg)
 	efi_bool_t truncated;
 	void *tcg2_protocol = NULL;
 
+  efi_printk(sys_table_arg,
+       "retrieve tpm2 eventlog 1.2\n");
 	status = efi_call_early(locate_protocol, &tcg2_guid, NULL,
 				&tcg2_protocol);
 	if (status != EFI_SUCCESS)
@@ -129,8 +131,144 @@ err_free:
 	efi_call_early(free_pool, log_tbl);
 }
 
+static int efi_calc_tpm2_event_size(efi_system_table_t *sys_table_arg,
+		struct tcg_efi_specid_event *efispecid,
+		struct tcg_pcr_event2 *event) {
+	struct tcg_event_field *event_field;
+	void *marker;
+	size_t size;
+	u16 halg;
+	int i, j;
+
+	marker = event;
+	marker += sizeof(event->pcr_idx) + sizeof(event->event_type)
+		+ sizeof(event->count);
+
+	/* Check if event is malformed. */
+	if (event->count > efispecid->num_algs)
+		return -1;
+
+	for (i = 0; i < event->count; i++) {
+		halg = event->digests[i].alg_id;
+		marker = marker + sizeof(event->digests[i].alg_id);
+		for (j = 0; j < efispecid->num_algs; j++) {
+			if (halg == efispecid->digest_sizes[j].alg_id) {
+				marker +=
+					efispecid->digest_sizes[j].digest_size;
+				break;
+			}
+		}
+		/* Algorithm without known length. Such event is unparseable. */
+		if (j == efispecid->num_algs)
+			return -1;
+	}
+
+	event_field = (struct tcg_event_field *)marker;
+	marker = marker + sizeof(event_field->event_size)
+		+ event_field->event_size;
+	size = marker - (void*)event;
+
+	if ((event->event_type == 0) && (event_field->event_size == 0)) {
+		efi_printk(sys_table_arg, "zero condition!\n");
+		return -1;
+	}
+
+	return size;
+}
+
+static int efi_calc_tpm2_eventlog_2_size(efi_system_table_t *sys_table_arg,
+	void *log, void *last_entry)
+{
+	struct tcg_efi_specid_event *efispecid;
+	struct tcg_pcr_event *log_header = log;
+	struct tcg_pcr_event2 *event = last_entry;
+	int last_entry_size;
+
+	efispecid = (struct tcg_efi_specid_event*) log_header->event;
+
+	if (last_entry == NULL)
+		return 0;
+
+	if (log == last_entry)
+		/* 
+		 * Only one entry (header) in the log.
+		 */
+		return log_header->event_size + sizeof(struct tcg_pcr_event);
+
+	if (event->count > efispecid->num_algs) {
+		efi_printk(sys_table_arg, "TCG2 event uses more algorithms than defined!\n");
+		return -1;
+	}
+
+	last_entry_size = efi_calc_tpm2_event_size(sys_table_arg, efispecid, last_entry);
+	if (last_entry_size < 0) {
+		return -1;
+	}
+
+	return (uint64_t) last_entry + last_entry_size - (uint64_t) log;
+}
+
+static void efi_retrieve_tpm2_eventlog_2(efi_system_table_t *sys_table_arg)
+{
+	efi_guid_t tcg2_guid = EFI_TCG2_PROTOCOL_GUID;
+	efi_guid_t linux_eventlog_guid = LINUX_EFI_TPM_EVENT_LOG_GUID;
+	efi_status_t status;
+	efi_physical_addr_t log_location = 0, log_last_entry = 0;
+	struct linux_efi_tpm_eventlog *log_tbl = NULL;
+	size_t log_size;
+	efi_bool_t truncated;
+	void *tcg2_protocol = NULL;
+
+	efi_printk(sys_table_arg,
+		"retrieve tpm2 eventlog 2\n");
+	status = efi_call_early(locate_protocol, &tcg2_guid, NULL,
+				&tcg2_protocol);
+	if (status != EFI_SUCCESS)
+		return;
+
+	status = efi_call_proto(efi_tcg2_protocol, get_event_log, tcg2_protocol,
+				EFI_TCG2_EVENT_LOG_FORMAT_TCG_2,
+				&log_location, &log_last_entry, &truncated);
+	if (status != EFI_SUCCESS)
+		return;
+
+	if (!log_location)
+		return;
+
+	log_size = efi_calc_tpm2_eventlog_2_size(sys_table_arg, (void*)log_location,
+			(void*) log_last_entry);
+
+	/* Allocate space for the logs and copy them. */
+	status = efi_call_early(allocate_pool, EFI_LOADER_DATA,
+				sizeof(*log_tbl) + log_size,
+				(void **) &log_tbl);
+
+	if (status != EFI_SUCCESS) {
+		efi_printk(sys_table_arg,
+			   "Unable to allocate memory for event log\n");
+		return;
+	}
+
+	memset(log_tbl, 0, sizeof(*log_tbl) + log_size);
+	log_tbl->size = log_size;
+	log_tbl->version = EFI_TCG2_EVENT_LOG_FORMAT_TCG_2;
+	memcpy(log_tbl->log, (void *) log_location, log_size);
+
+	status = efi_call_early(install_configuration_table,
+				&linux_eventlog_guid, log_tbl);
+	if (status != EFI_SUCCESS)
+		goto err_free;
+	return;
+
+err_free:
+	efi_call_early(free_pool, log_tbl);
+}
+
 void efi_retrieve_tpm2_eventlog(efi_system_table_t *sys_table_arg)
 {
-	/* Only try to retrieve the logs in 1.2 format. */
+	efi_printk(sys_table_arg,
+		"retreving tpm log\n");
+	efi_retrieve_tpm2_eventlog_2(sys_table_arg);
+	return;
 	efi_retrieve_tpm2_eventlog_1_2(sys_table_arg);
 }

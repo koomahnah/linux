@@ -6,6 +6,7 @@
 extern const struct seq_operations tpm1_ascii_b_measurements_seqops;
 extern const struct seq_operations tpm1_binary_b_measurements_seqops;
 extern const struct seq_operations tpm2_binary_b_measurements_seqops;
+extern const struct seq_operations tpm2_ascii_b_measurements_seqops;
 
 #if defined(CONFIG_ACPI)
 int tpm_read_log_acpi(struct tpm_chip *chip);

@@ -20,9 +20,12 @@ int __init efi_tpm_eventlog_init(void)
 {
 	struct linux_efi_tpm_eventlog *log_tbl;
 	unsigned int tbl_size;
+	pr_err("%s\n", __func__);
 
-	if (efi.tpm_log == EFI_INVALID_TABLE_ADDR)
+	if (efi.tpm_log == EFI_INVALID_TABLE_ADDR) {
+		pr_err("%s: invalid address in efi.tpm_log\n", __func__);
 		return 0;
+	}
 
 	log_tbl = early_memremap(efi.tpm_log, sizeof(*log_tbl));
 	if (!log_tbl) {

@@ -26,11 +26,15 @@ int tpm_read_log_efi(struct tpm_chip *chip)
 	u32 log_size;
 	u8 tpm_log_version;
 
-	if (!(chip->flags & TPM_CHIP_FLAG_TPM2))
+	if (!(chip->flags & TPM_CHIP_FLAG_TPM2))  {
+		pr_err("%s: chip flag tpm2 err\n", __func__);
 		return -ENODEV;
+	}
 
-	if (efi.tpm_log == EFI_INVALID_TABLE_ADDR)
+	if (efi.tpm_log == EFI_INVALID_TABLE_ADDR) {
+		pr_err("%s: invalid table addr err\n", __func__);
 		return -ENODEV;
+	}
 
 	log = &chip->log;
 

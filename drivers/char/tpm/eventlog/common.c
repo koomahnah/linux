@@ -81,19 +81,23 @@ static int tpm_read_log(struct tpm_chip *chip)
 	int rc;
 
 	if (chip->log.bios_event_log != NULL) {
-		dev_dbg(&chip->dev,
+		dev_err(&chip->dev,
 			"%s: ERROR - event log already initialized\n",
 			__func__);
 		return -EFAULT;
 	}
 
 	rc = tpm_read_log_acpi(chip);
-	if (rc != -ENODEV)
+	if (rc != -ENODEV) {
+    pr_err("failed to read from acpi\n");
 		return rc;
+  }
 
 	rc = tpm_read_log_efi(chip);
-	if (rc != -ENODEV)
+	if (rc != -ENODEV) {
+    pr_err("failed to read from efi\n");
 		return rc;
+  }
 
 	return tpm_read_log_of(chip);
 }
@@ -115,9 +119,12 @@ int tpm_bios_log_setup(struct tpm_chip *chip)
 	int log_version;
 	int rc = 0;
 
+	pr_err("%s\n", __func__);
 	rc = tpm_read_log(chip);
-	if (rc < 0)
+	if (rc < 0) {
+		pr_err("reading log failure\n");
 		return rc;
+	}
 	log_version = rc;
 
 	cnt = 0;
@@ -125,18 +132,26 @@ int tpm_bios_log_setup(struct tpm_chip *chip)
 	/* NOTE: securityfs_create_dir can return ENODEV if securityfs is
 	 * compiled out. The caller should ignore the ENODEV return code.
 	 */
-	if (IS_ERR(chip->bios_dir[cnt]))
+	if (IS_ERR(chip->bios_dir[cnt])) {
+		pr_err("bios dir failure\n");
 		goto err;
+	}
 	cnt++;
 
 	chip->bin_log_seqops.chip = chip;
-	if (log_version == EFI_TCG2_EVENT_LOG_FORMAT_TCG_2)
+	if (log_version == EFI_TCG2_EVENT_LOG_FORMAT_TCG_2) {
+		pr_err("%s: TCG2 format seqops\n", __func__);
 		chip->bin_log_seqops.seqops =
 			&tpm2_binary_b_measurements_seqops;
-	else
+		chip->ascii_log_seqops.seqops =
+			&tpm2_ascii_b_measurements_seqops;
+	} else {
+		pr_err("%s: TCG1 format seqops\n", __func__);
 		chip->bin_log_seqops.seqops =
 			&tpm1_binary_b_measurements_seqops;
-
+		chip->ascii_log_seqops.seqops =
+			&tpm1_ascii_b_measurements_seqops;
+	}
 
 	chip->bios_dir[cnt] =
 	    securityfs_create_file("binary_bios_measurements",
@@ -147,21 +162,16 @@ int tpm_bios_log_setup(struct tpm_chip *chip)
 		goto err;
 	cnt++;
 
-	if (!(chip->flags & TPM_CHIP_FLAG_TPM2)) {
+	chip->ascii_log_seqops.chip = chip;
 
-		chip->ascii_log_seqops.chip = chip;
-		chip->ascii_log_seqops.seqops =
-			&tpm1_ascii_b_measurements_seqops;
-
-		chip->bios_dir[cnt] =
-			securityfs_create_file("ascii_bios_measurements",
-					       0440, chip->bios_dir[0],
-					       (void *)&chip->ascii_log_seqops,
-					       &tpm_bios_measurements_ops);
-		if (IS_ERR(chip->bios_dir[cnt]))
-			goto err;
-		cnt++;
-	}
+	chip->bios_dir[cnt] =
+		securityfs_create_file("ascii_bios_measurements",
+				       0440, chip->bios_dir[0],
+				       (void *)&chip->ascii_log_seqops,
+				       &tpm_bios_measurements_ops);
+	if (IS_ERR(chip->bios_dir[cnt]))
+		goto err;
+	cnt++;
 
 	return 0;
 

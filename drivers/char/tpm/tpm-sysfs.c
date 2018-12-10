@@ -307,8 +307,10 @@ void tpm_sysfs_add_device(struct tpm_chip *chip)
 	/* XXX: If you wish to remove this restriction, you must first update
 	 * tpm_sysfs to explicitly lock chip->ops.
 	 */
-	if (chip->flags & TPM_CHIP_FLAG_TPM2)
+	if (chip->flags & TPM_CHIP_FLAG_TPM2) {
+    pr_err("TPM_CHIP_FLAG_TPM2 err\n");
 		return;
+  }
 
 	/* The sysfs routines rely on an implicit tpm_try_get_ops, device_del
 	 * is called before ops is null'd and the sysfs core synchronizes this
