@@ -15,6 +15,60 @@
 
 #include "efistub.h"
 
+static void utoha(uint64_t val, char *buf, int buf_size) {
+	int index = 0;
+	int i = 0;
+	while (val > 0) {
+		if (index >= buf_size) {
+			buf[index-1] = '\0';
+			return;
+		}
+		if (val % 16 <= 9)
+			buf[index] = (val % 16) + 48;
+		else
+			buf[index] = (val % 16) + 87;
+		index++;
+		val /= 16;
+	}
+	if (index >= buf_size)
+		index--;
+	while (i < index/2) {
+		char c = buf[i];
+		buf[i] = buf[index-1-i];
+		buf[index-1-i] = c;
+		i++;
+	}
+	
+	buf[index] = '\0';
+}
+static void itoda(int val, char *buf, int buf_size) {
+	int index = 0;
+	int i = 0, j = 0;
+	if (val < 0) {
+		buf[index++] = '-';
+		val = -val;
+		i = 1;
+		j = 1;
+	}
+	while (val > 0) {
+		if (index >= buf_size) {
+			buf[index-1] = '\0';
+			return;
+		}
+		buf[index] = (val % 10) + 48;
+		index++;
+		val /= 10;
+	}
+	if (index >= buf_size)
+		index--;
+	while (i < index/2+j) {
+		char c = buf[i];
+		buf[i] = buf[index-1-i+j];
+		buf[index-1-i+j] = c;
+		i++;
+	}
+	buf[index] = '\0';
+}
 #ifdef CONFIG_RESET_ATTACK_MITIGATION
 static const efi_char16_t efi_MemoryOverWriteRequest_name[] =
 	L"MemoryOverwriteRequestControl";
@@ -32,6 +86,7 @@ static const efi_char16_t efi_MemoryOverWriteRequest_name[] =
 			 (efi_char16_t *)(name), (efi_guid_t *)(vendor), \
 			 __VA_ARGS__)
 
+	
 /*
  * Enable reboot attack mitigation. This requests that the firmware clear the
  * RAM on next reboot before proceeding with boot, ensuring that any secrets
@@ -71,8 +126,8 @@ static void efi_retrieve_tpm2_eventlog_1_2(efi_system_table_t *sys_table_arg)
 	efi_bool_t truncated;
 	void *tcg2_protocol = NULL;
 
-  efi_printk(sys_table_arg,
-       "retrieve tpm2 eventlog 1.2\n");
+	efi_printk(sys_table_arg,
+		"retrieve tpm2 eventlog 1.2\n");
 	status = efi_call_early(locate_protocol, &tcg2_guid, NULL,
 				&tcg2_protocol);
 	if (status != EFI_SUCCESS)
@@ -145,8 +200,11 @@ static int efi_calc_tpm2_event_size(efi_system_table_t *sys_table_arg,
 		+ sizeof(event->count);
 
 	/* Check if event is malformed. */
-	if (event->count > efispecid->num_algs)
+	if (event->count > efispecid->num_algs) {
+		efi_printk(sys_table_arg,
+			"malformed event\n");
 		return -1;
+	}
 
 	for (i = 0; i < event->count; i++) {
 		halg = event->digests[i].alg_id;
@@ -159,8 +217,11 @@ static int efi_calc_tpm2_event_size(efi_system_table_t *sys_table_arg,
 			}
 		}
 		/* Algorithm without known length. Such event is unparseable. */
-		if (j == efispecid->num_algs)
+		if (j == efispecid->num_algs) {
+			efi_printk(sys_table_arg,
+				"unknown algorithm\n");
 			return -1;
+		}
 	}
 
 	event_field = (struct tcg_event_field *)marker;
@@ -182,18 +243,24 @@ static int efi_calc_tpm2_eventlog_2_size(efi_system_table_t *sys_table_arg,
 	struct tcg_efi_specid_event *efispecid;
 	struct tcg_pcr_event *log_header = log;
 	struct tcg_pcr_event2 *event = last_entry;
-	int last_entry_size;
+	uint64_t last_entry_size;
 
 	efispecid = (struct tcg_efi_specid_event*) log_header->event;
 
-	if (last_entry == NULL)
+	if (last_entry == NULL) {
+		efi_printk(sys_table_arg,
+			"null last entry\n");
 		return 0;
+	}
 
-	if (log == last_entry)
+	if (log == last_entry) {
 		/* 
 		 * Only one entry (header) in the log.
 		 */
+		efi_printk(sys_table_arg,
+			"only one entry\n");
 		return log_header->event_size + sizeof(struct tcg_pcr_event);
+	}
 
 	if (event->count > efispecid->num_algs) {
 		efi_printk(sys_table_arg, "TCG2 event uses more algorithms than defined!\n");
@@ -202,6 +269,8 @@ static int efi_calc_tpm2_eventlog_2_size(efi_system_table_t *sys_table_arg,
 
 	last_entry_size = efi_calc_tpm2_event_size(sys_table_arg, efispecid, last_entry);
 	if (last_entry_size < 0) {
+		efi_printk(sys_table_arg,
+			"invalid last entry size\n");
 		return -1;
 	}
 
@@ -237,6 +306,10 @@ static void efi_retrieve_tpm2_eventlog_2(efi_system_table_t *sys_table_arg)
 
 	log_size = efi_calc_tpm2_eventlog_2_size(sys_table_arg, (void*)log_location,
 			(void*) log_last_entry);
+	if (log_size < 0) {
+		efi_printk(sys_table_arg,
+			"invalid log size\n");
+	}
 
 	/* Allocate space for the logs and copy them. */
 	status = efi_call_early(allocate_pool, EFI_LOADER_DATA,
@@ -264,10 +337,32 @@ err_free:
 	efi_call_early(free_pool, log_tbl);
 }
 
+static void printi(efi_system_table_t *sys_table_arg, const char *s, int val) {
+	char buf[100];
+	itoda(val, buf, 100);
+	efi_printk(sys_table_arg, s);
+	efi_printk(sys_table_arg, buf);
+	efi_printk(sys_table_arg, "\n");
+}
+
+static void printh(efi_system_table_t *sys_table_arg, const char *s, uint64_t val) {
+	char buf[100];
+	utoha(val, buf, 100);
+	efi_printk(sys_table_arg, s);
+	efi_printk(sys_table_arg, buf);
+	efi_printk(sys_table_arg, "\n");
+}
+
 void efi_retrieve_tpm2_eventlog(efi_system_table_t *sys_table_arg)
 {
 	efi_printk(sys_table_arg,
 		"retreving tpm log\n");
+	printi(sys_table_arg, "15192: ", 15192);
+	printi(sys_table_arg, "115192: ", 115192);
+	printi(sys_table_arg, "-15192: ", -15192);
+	printi(sys_table_arg, "-115192: ", -115192);
+	printh(sys_table_arg, "15a92: ", 0x15a92);
+	printh(sys_table_arg, "115a92: ", 0x115a92);
 	efi_retrieve_tpm2_eventlog_2(sys_table_arg);
 	return;
 	efi_retrieve_tpm2_eventlog_1_2(sys_table_arg);
