@@ -69,6 +69,23 @@ static void itoda(int val, char *buf, int buf_size) {
 	}
 	buf[index] = '\0';
 }
+
+static void printi(efi_system_table_t *sys_table_arg, const char *s, int val) {
+	char buf[100];
+	itoda(val, buf, 100);
+	efi_printk(sys_table_arg, s);
+	efi_printk(sys_table_arg, buf);
+	efi_printk(sys_table_arg, "\n");
+}
+
+static void printh(efi_system_table_t *sys_table_arg, const char *s, uint64_t val) {
+	char buf[100];
+	utoha(val, buf, 100);
+	efi_printk(sys_table_arg, s);
+	efi_printk(sys_table_arg, buf);
+	efi_printk(sys_table_arg, "\n");
+}
+
 #ifdef CONFIG_RESET_ATTACK_MITIGATION
 static const efi_char16_t efi_MemoryOverWriteRequest_name[] =
 	L"MemoryOverwriteRequestControl";
@@ -205,14 +222,20 @@ static int efi_calc_tpm2_event_size(efi_system_table_t *sys_table_arg,
 			"malformed event\n");
 		return -1;
 	}
+	uint8_t *ptr = (uint8_t*) event;
+	for (i = 0; i < sizeof(*event); i++)
+		printh(sys_table_arg, "byte: ", ptr[i]);
 
+	printi(sys_table_arg, "event->count: ", event->count);
 	for (i = 0; i < event->count; i++) {
-		halg = event->digests[i].alg_id;
+		memcpy(&halg, marker, sizeof(event->digests[i].alg_id));
 		marker = marker + sizeof(event->digests[i].alg_id);
 		for (j = 0; j < efispecid->num_algs; j++) {
 			if (halg == efispecid->digest_sizes[j].alg_id) {
 				marker +=
 					efispecid->digest_sizes[j].digest_size;
+				printi(sys_table_arg, "alg_id: ", halg);
+				printi(sys_table_arg, "skipping through ", efispecid->digest_sizes[j].digest_size);
 				break;
 			}
 		}
@@ -220,6 +243,7 @@ static int efi_calc_tpm2_event_size(efi_system_table_t *sys_table_arg,
 		if (j == efispecid->num_algs) {
 			efi_printk(sys_table_arg,
 				"unknown algorithm\n");
+			printi(sys_table_arg, "halg: ", (int)halg);
 			return -1;
 		}
 	}
@@ -243,7 +267,7 @@ static int efi_calc_tpm2_eventlog_2_size(efi_system_table_t *sys_table_arg,
 	struct tcg_efi_specid_event *efispecid;
 	struct tcg_pcr_event *log_header = log;
 	struct tcg_pcr_event2 *event = last_entry;
-	uint64_t last_entry_size;
+	int last_entry_size;
 
 	efispecid = (struct tcg_efi_specid_event*) log_header->event;
 
@@ -274,7 +298,7 @@ static int efi_calc_tpm2_eventlog_2_size(efi_system_table_t *sys_table_arg,
 		return -1;
 	}
 
-	return (uint64_t) last_entry + last_entry_size - (uint64_t) log;
+	return (uint64_t) last_entry + (uint64_t)last_entry_size - (uint64_t) log;
 }
 
 static void efi_retrieve_tpm2_eventlog_2(efi_system_table_t *sys_table_arg)
@@ -335,22 +359,6 @@ static void efi_retrieve_tpm2_eventlog_2(efi_system_table_t *sys_table_arg)
 
 err_free:
 	efi_call_early(free_pool, log_tbl);
-}
-
-static void printi(efi_system_table_t *sys_table_arg, const char *s, int val) {
-	char buf[100];
-	itoda(val, buf, 100);
-	efi_printk(sys_table_arg, s);
-	efi_printk(sys_table_arg, buf);
-	efi_printk(sys_table_arg, "\n");
-}
-
-static void printh(efi_system_table_t *sys_table_arg, const char *s, uint64_t val) {
-	char buf[100];
-	utoha(val, buf, 100);
-	efi_printk(sys_table_arg, s);
-	efi_printk(sys_table_arg, buf);
-	efi_printk(sys_table_arg, "\n");
 }
 
 void efi_retrieve_tpm2_eventlog(efi_system_table_t *sys_table_arg)
