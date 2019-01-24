@@ -129,43 +129,45 @@ err_free:
 	efi_call_early(free_pool, log_tbl);
 }
 
-static int efi_calc_tpm2_eventlog_2_size(efi_system_table_t *sys_table_arg,
-	void *log, void *last_entry)
+static efi_status_t efi_calc_tpm2_eventlog_2_size(efi_system_table_t *sys_table_arg,
+	void *log, void *last_entry, size_t *log_size)
 {
 	struct tcg_efi_specid_event *efispecid;
 	struct tcg_pcr_event *log_header = log;
 	struct tcg_pcr_event2 *event = last_entry;
-	int last_entry_size;
+	ssize_t last_entry_size;
 
 	efispecid = (struct tcg_efi_specid_event*) log_header->event;
 
-	if (last_entry == NULL) {
-		return 0;
+	if (last_entry == NULL || log_size == NULL) {
+		return EFI_INVALID_PARAMETER;
 	}
 
 	if (log == last_entry) {
 		/*
 		 * Only one entry (header) in the log.
 		 */
-		return log_header->event_size + sizeof(struct tcg_pcr_event);
+		*log_size = log_header->event_size + sizeof(struct tcg_pcr_event);
+		return EFI_SUCCESS;
 	}
 
 	if (event->count > efispecid->num_algs) {
 		efi_printk(sys_table_arg, "TCG2 event uses more algorithms than defined!\n");
-		return -1;
+		return EFI_INVALID_PARAMETER;
 	}
 
-	last_entry_size = calc_tpm2_event_size(last_entry, log_header);
+	last_entry_size = calc_tpm2_event_size(last_entry, efispecid);
 	if (last_entry_size < 0) {
 		efi_printk(sys_table_arg,
 			"TCG2 log has invalid last entry size\n");
-		return -1;
+		return EFI_INVALID_PARAMETER;
 	}
 
-	return (uint64_t) last_entry + (uint64_t)last_entry_size - (uint64_t) log;
+	*log_size = (uint64_t) last_entry + (uint64_t)last_entry_size - (uint64_t) log;
+	return EFI_SUCCESS;
 }
 
-static void efi_retrieve_tpm2_eventlog_2(efi_system_table_t *sys_table_arg)
+static efi_status_t efi_retrieve_tpm2_eventlog_2(efi_system_table_t *sys_table_arg)
 {
 	efi_guid_t tcg2_guid = EFI_TCG2_PROTOCOL_GUID;
 	efi_guid_t linux_eventlog_guid = LINUX_EFI_TPM_EVENT_LOG_GUID;
@@ -179,24 +181,21 @@ static void efi_retrieve_tpm2_eventlog_2(efi_system_table_t *sys_table_arg)
 	status = efi_call_early(locate_protocol, &tcg2_guid, NULL,
 				&tcg2_protocol);
 	if (status != EFI_SUCCESS)
-		return;
+		return status;
 
 	status = efi_call_proto(efi_tcg2_protocol, get_event_log, tcg2_protocol,
 				EFI_TCG2_EVENT_LOG_FORMAT_TCG_2,
 				&log_location, &log_last_entry, &truncated);
 	if (status != EFI_SUCCESS)
-		return;
+		return status;
 
 	if (!log_location)
-		return;
+		return EFI_NOT_FOUND;
 
-	log_size = efi_calc_tpm2_eventlog_2_size(sys_table_arg, (void*)log_location,
-			(void*) log_last_entry);
-	if (log_size < 0) {
-		efi_printk(sys_table_arg,
-			"TCG2 log has invalid size\n");
-		return;
-	}
+	status = efi_calc_tpm2_eventlog_2_size(sys_table_arg, (void*)log_location,
+			(void*) log_last_entry, &log_size);
+	if (status != EFI_SUCCESS)
+		return status;
 
 	/* Allocate space for the logs and copy them. */
 	status = efi_call_early(allocate_pool, EFI_LOADER_DATA,
@@ -206,7 +205,7 @@ static void efi_retrieve_tpm2_eventlog_2(efi_system_table_t *sys_table_arg)
 	if (status != EFI_SUCCESS) {
 		efi_printk(sys_table_arg,
 			   "Unable to allocate memory for event log\n");
-		return;
+		return status;
 	}
 
 	memset(log_tbl, 0, sizeof(*log_tbl) + log_size);
@@ -218,14 +217,19 @@ static void efi_retrieve_tpm2_eventlog_2(efi_system_table_t *sys_table_arg)
 				&linux_eventlog_guid, log_tbl);
 	if (status != EFI_SUCCESS)
 		goto err_free;
-	return;
+
+	return EFI_SUCCESS;
 
 err_free:
 	efi_call_early(free_pool, log_tbl);
+	return status;
 }
 
 void efi_retrieve_tpm2_eventlog(efi_system_table_t *sys_table_arg)
 {
-	efi_retrieve_tpm2_eventlog_1_2(sys_table_arg);
-	efi_retrieve_tpm2_eventlog_2(sys_table_arg);
+	efi_status_t status;
+
+	status = efi_retrieve_tpm2_eventlog_2(sys_table_arg);
+	if (status != EFI_SUCCESS)
+		efi_retrieve_tpm2_eventlog_1_2(sys_table_arg);
 }
