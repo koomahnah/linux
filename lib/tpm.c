@@ -11,19 +11,18 @@
  * Family "2.0".
 
  * @event: event whose size is to be calculated.
- * @event_header: the first event in the event log.
+ * @efispecid: pointer to structure describing algorithms used.
  *
- * Returns size of the event. If it is an invalid event, returns 0.
+ * Returns size of the event. If it is an invalid event, returns -1.
  */
-int calc_tpm2_event_size(struct tcg_pcr_event2 *event,
-			 struct tcg_pcr_event *event_header)
+ssize_t calc_tpm2_event_size(struct tcg_pcr_event2 *event,
+			     struct tcg_efi_specid_event *efispecid)
 {
-	struct tcg_efi_specid_event *efispecid;
 	struct tcg_event_field *event_field;
 	void *marker;
 	void *marker_start;
 	u32 halg_size;
-	size_t size;
+	ssize_t size;
 	u16 halg;
 	int i;
 	int j;
@@ -33,11 +32,9 @@ int calc_tpm2_event_size(struct tcg_pcr_event2 *event,
 	marker = marker + sizeof(event->pcr_idx) + sizeof(event->event_type)
 		+ sizeof(event->count);
 
-	efispecid = (struct tcg_efi_specid_event *)event_header->event;
-
 	/* Check if event is malformed. */
 	if (event->count > efispecid->num_algs)
-		return 0;
+		return -1;
 
 	for (i = 0; i < event->count; i++) {
 		halg_size = sizeof(event->digests[i].alg_id);
@@ -52,7 +49,7 @@ int calc_tpm2_event_size(struct tcg_pcr_event2 *event,
 		}
 		/* Algorithm without known length. Such event is unparseable. */
 		if (j == efispecid->num_algs)
-			return 0;
+			return -1;
 	}
 
 	event_field = (struct tcg_event_field *)marker;
@@ -61,7 +58,7 @@ int calc_tpm2_event_size(struct tcg_pcr_event2 *event,
 	size = marker - marker_start;
 
 	if ((event->event_type == 0) && (event_field->event_size == 0))
-		return 0;
+		return -1;
 
 	return size;
 }
