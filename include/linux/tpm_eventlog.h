@@ -121,4 +121,7 @@ struct tcg_pcr_event2 {
 	struct tcg_event_field event;
 } __packed;
 
+ssize_t calc_tpm2_event_size(struct tcg_pcr_event2 *event,
+			     struct tcg_efi_specid_event *efispecid);
+
 #endif
