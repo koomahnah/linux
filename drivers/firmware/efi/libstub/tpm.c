@@ -71,19 +71,30 @@ static void efi_retrieve_tpm2_eventlog_1_2(efi_system_table_t *sys_table_arg)
 	efi_bool_t truncated;
 	void *tcg2_protocol = NULL;
 
+	efi_printk(sys_table_arg,
+		   "efi_retrieve_tpm2_eventlog_1_2\n");
 	status = efi_call_early(locate_protocol, &tcg2_guid, NULL,
 				&tcg2_protocol);
-	if (status != EFI_SUCCESS)
+	if (status != EFI_SUCCESS) {
+		efi_printk(sys_table_arg,
+			   "Unable to locate protocol\n");
 		return;
+	}
 
 	status = efi_call_proto(efi_tcg2_protocol, get_event_log, tcg2_protocol,
 				EFI_TCG2_EVENT_LOG_FORMAT_TCG_1_2,
 				&log_location, &log_last_entry, &truncated);
-	if (status != EFI_SUCCESS)
+	if (status != EFI_SUCCESS) {
+		efi_printk(sys_table_arg,
+			   "geteventlog failed\n");
 		return;
+	}
 
-	if (!log_location)
+	if (!log_location) {
+		efi_printk(sys_table_arg,
+			   "null log location\n");
 		return;
+	}
 	first_entry_addr = (unsigned long) log_location;
 
 	/*
@@ -121,8 +132,11 @@ static void efi_retrieve_tpm2_eventlog_1_2(efi_system_table_t *sys_table_arg)
 
 	status = efi_call_early(install_configuration_table,
 				&linux_eventlog_guid, log_tbl);
-	if (status != EFI_SUCCESS)
+	if (status != EFI_SUCCESS) {
+		efi_printk(sys_table_arg,
+			   "failed to install conf table\n");
 		goto err_free;
+	}
 	return;
 
 err_free:
@@ -178,26 +192,40 @@ static efi_status_t efi_retrieve_tpm2_eventlog_2(efi_system_table_t *sys_table_a
 	void *tcg2_protocol = NULL;
 	ssize_t log_size;
 
+	efi_printk(sys_table_arg,
+		   "efi_retrieve_tpm2_eventlog_2\n");
 	status = efi_call_early(locate_protocol, &tcg2_guid, NULL,
 				&tcg2_protocol);
-	if (status != EFI_SUCCESS)
+	if (status != EFI_SUCCESS) {
+		efi_printk(sys_table_arg,
+			   "Unable to locate protocol\n");
 		return status;
+	}
 
 	status = efi_call_proto(efi_tcg2_protocol, get_event_log, tcg2_protocol,
 				EFI_TCG2_EVENT_LOG_FORMAT_TCG_2,
 				&log_location, &log_last_entry, &truncated);
-	if (status != EFI_SUCCESS)
+	if (status != EFI_SUCCESS) {
+		efi_printk(sys_table_arg,
+			   "geteventlog failed\n");
 		return status;
+	}
 
-	if (!log_location)
+	if (!log_location) {
+		efi_printk(sys_table_arg,
+			   "null log location\n");
 		return EFI_NOT_FOUND;
+	}
 
 	status = efi_calc_tpm2_eventlog_2_size(sys_table_arg,
 					       (void*)log_location,
 					       (void*) log_last_entry,
 					       &log_size);
-	if (status != EFI_SUCCESS)
+	if (status != EFI_SUCCESS) {
+		efi_printk(sys_table_arg,
+			   "unable to calculate size\n");
 		return status;
+	}
 
 	/* Allocate space for the logs and copy them. */
 	status = efi_call_early(allocate_pool, EFI_LOADER_DATA,
@@ -217,8 +245,11 @@ static efi_status_t efi_retrieve_tpm2_eventlog_2(efi_system_table_t *sys_table_a
 
 	status = efi_call_early(install_configuration_table,
 				&linux_eventlog_guid, log_tbl);
-	if (status != EFI_SUCCESS)
+	if (status != EFI_SUCCESS) {
+		efi_printk(sys_table_arg,
+			   "cannot install configuration table\n");
 		goto err_free;
+	}
 
 	return EFI_SUCCESS;
 
@@ -231,6 +262,8 @@ void efi_retrieve_tpm2_eventlog(efi_system_table_t *sys_table_arg)
 {
 	efi_status_t status;
 
+	efi_printk(sys_table_arg,
+		   "efi_retrieve_tpm2_eventlog\n");
 	status = efi_retrieve_tpm2_eventlog_2(sys_table_arg);
 	if (status != EFI_SUCCESS)
 		efi_retrieve_tpm2_eventlog_1_2(sys_table_arg);
